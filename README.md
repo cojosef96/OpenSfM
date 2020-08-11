@@ -40,6 +40,14 @@ This update relay on the silx python package.
 To install it you will need to install pyopencl.
 Please see the installation guide [Here](http://www.silx.org/doc/silx/dev/install.html).
 
+### Installation
+```
+git clone https://13.92.98.39.nip.io/cojosef/OpenSfM_sift_gpu.git
+cd OpenSfm_sift_gpu/
+git submodule update --init --recursive
+```
+
+
 ### Usage
 In order to test if all the packages were installed correctly. Try to run my test code. 
 Which match two of the images in the Berlin data. The code can be found in the main folder under the name "test_sift_gpu.py".
@@ -54,7 +62,9 @@ python test_sift_gpu.py
 If all the dependencies were installed correctly.
 To run the opensfm pipeline enter this commands:
 ```
-cd OpenSfm_sift_gpu
+cd OpenSfm_sift_gpu/
+python setup.py build
+python setup.py install
 ./bin/opensfm_run_all data/berlin_gpu
 ```
 
