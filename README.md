@@ -118,3 +118,6 @@ Feature Matching took 0.025 sec
 
 For more information, you can contact me via [Email](mailto:cojosef@gmail.com)
 
+
+## License
+OpenSfM is BSD-style licensed, as found in the LICENSE file.

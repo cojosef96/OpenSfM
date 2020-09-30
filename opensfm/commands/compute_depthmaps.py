@@ -1,25 +1,22 @@
-import logging
-
-from opensfm import dataset
-from opensfm import dense
-
-logger = logging.getLogger(__name__)
+from . import command
+from opensfm.actions import compute_depthmaps
 
 
-class Command:
+class Command(command.CommandBase):
     name = 'compute_depthmaps'
     help = "Compute depthmap"
 
-    def add_arguments(self, parser):
-        parser.add_argument('dataset', help='dataset to process')
-        parser.add_argument('--interactive',
-                            help='plot results as they are being computed',
-                            action='store_true')
+    def run_impl(self, dataset, args):
+        compute_depthmaps.run_dataset(dataset, args.subfolder, args.interactive)
 
-    def run(self, args):
-        data = dataset.DataSet(args.dataset)
-        data.config['interactive'] = args.interactive
-        reconstructions = data.load_undistorted_reconstruction()
-        graph = data.load_undistorted_tracks_graph()
-
-        dense.compute_depthmaps(data, graph, reconstructions[0])
+    def add_arguments_impl(self, parser):
+        parser.add_argument(
+            '--subfolder',
+            help='undistorted subfolder where to load and store data',
+            default='undistorted'
+        )
+        parser.add_argument(
+            '--interactive',
+            help='plot results as they are being computed',
+            action='store_true',
+        )

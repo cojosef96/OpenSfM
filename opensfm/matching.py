@@ -1,12 +1,12 @@
 import numpy as np
 import cv2
-import pyopengv
 import logging
 
 from timeit import default_timer as timer
 from collections import defaultdict
 
-from opensfm import csfm
+from opensfm import pygeometry
+from opensfm import pyfeatures
 from opensfm import context
 from opensfm import log
 from opensfm import multiview
@@ -249,13 +249,10 @@ def match_unwrap_args(args):
     im1, candidates, ctx = args
 
     im1_matches = {}
-    p1, f1, _ = feature_loader.instance.load_points_features_colors(ctx.data, im1)
     camera1 = ctx.cameras[ctx.exifs[im1]['camera']]
 
     for im2 in candidates:
-        p2, f2, _ = feature_loader.instance.load_points_features_colors(ctx.data, im2)
         camera2 = ctx.cameras[ctx.exifs[im2]['camera']]
-
         im1_matches[im2] = match(im1, im2, camera1, camera2, ctx.data)
 
     num_matches = sum(1 for m in im1_matches.values() if len(m) > 0)
@@ -292,10 +289,10 @@ def match(im1, im2, camera1, camera2, data):
         else:
             matches = match_words(f1, w1, f2, w2, config)
     elif matcher_type == 'FLANN':
-        i1 = feature_loader.instance.load_features_index(data, im1, masked=True)
+        fi1, i1 = feature_loader.instance.load_features_index(data, im1, masked=True)
         if symmetric_matching:
-            i2 = feature_loader.instance.load_features_index(data, im2, masked=True)
-            matches = match_flann_symmetric(f1, i1, f2, i2, config)
+            fi2, i2 = feature_loader.instance.load_features_index(data, im2, masked=True)
+            matches = match_flann_symmetric(fi1, i1, fi2, i2, config)
         else:
             matches = match_flann(i1, f2, config)
     elif matcher_type == 'BRUTEFORCE':
@@ -367,8 +364,8 @@ def match_words(f1, words1, f2, words2, config):
     """
     ratio = config['lowes_ratio']
     num_checks = config['bow_num_checks']
-    return csfm.match_using_words(f1, words1, f2, words2[:, 0],
-                                  ratio, num_checks)
+    return pyfeatures.match_using_words(f1, words1, f2, words2[:, 0],
+                                        ratio, num_checks)
 
 
 def match_words_symmetric(f1, words1, f2, words2, config):
@@ -493,7 +490,7 @@ def robust_match_fundamental(p1, p2, matches, config):
 def _compute_inliers_bearings(b1, b2, T, threshold=0.01):
     R = T[:, :3]
     t = T[:, 3]
-    p = pyopengv.triangulation_triangulate(b1, b2, t, R)
+    p = np.array(pygeometry.triangulate_two_bearings_midpoint_many(b1, b2, R, t))
 
     br1 = p.copy()
     br1 /= np.linalg.norm(br1, axis=1)[:, np.newaxis]
@@ -519,14 +516,15 @@ def robust_match_calibrated(p1, p2, camera1, camera2, matches, config):
 
     threshold = config['robust_matching_calib_threshold']
     T = multiview.relative_pose_ransac(
-        b1, b2, b"STEWENIUS", 1 - np.cos(threshold), 1000, 0.999)
+        b1, b2, threshold, 1000, 0.999)
 
     for relax in [4, 2, 1]:
         inliers = _compute_inliers_bearings(b1, b2, T, relax * threshold)
-        if sum(inliers) < 8:
+        if np.sum(inliers) < 8:
             return np.array([])
-        T = pyopengv.relative_pose_optimize_nonlinear(
-            b1[inliers], b2[inliers], T[:3, 3], T[:3, :3])
+        iterations = config['five_point_refine_match_iterations']
+        T = multiview.relative_pose_optimize_nonlinear(
+            b1[inliers], b2[inliers], T[:3, 3], T[:3, :3], iterations)
 
     inliers = _compute_inliers_bearings(b1, b2, T, threshold)
 
@@ -595,8 +593,8 @@ def _not_on_pano_poles_matches(p1, p2, matches, camera1, camera2):
     """
     min_lat = -0.125
     max_lat = 0.125
-    is_pano1 = (camera1.projection_type == 'equirectangular')
-    is_pano2 = (camera2.projection_type == 'equirectangular')
+    is_pano1 = pygeometry.Camera.is_panorama(camera1.projection_type)
+    is_pano2 = pygeometry.Camera.is_panorama(camera2.projection_type)
     if is_pano1 or is_pano2:
         res = []
         for match in matches:
