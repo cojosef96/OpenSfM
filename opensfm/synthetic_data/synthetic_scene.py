@@ -5,8 +5,10 @@ from __future__ import unicode_literals
 
 import numpy as np
 import functools
+import math
 
 from opensfm import types
+from opensfm import pygeometry
 
 import opensfm.synthetic_data.synthetic_metrics as sm
 import opensfm.synthetic_data.synthetic_generator as sg
@@ -15,13 +17,10 @@ import opensfm.synthetic_data.synthetic_generator as sg
 def get_camera(type, id, focal, k1, k2):
     camera = None
     if type == 'perspective':
-        camera = types.PerspectiveCamera()
-    if type == 'fisheye':
-        camera = types.FisheyeCamera()
+        camera = pygeometry.Camera.create_perspective(focal, k1, k2)
+
     camera.id = id
-    camera.focal = focal
-    camera.k1 = k1
-    camera.k2 = k2
+
     camera.height = 1600
     camera.width = 2000
     return camera
@@ -29,8 +28,10 @@ def get_camera(type, id, focal, k1, k2):
 
 def get_scene_generator(type, length):
     generator = None
+    if type == 'circle':
+        generator = functools.partial(sg.ellipse_generator, length, length)
     if type == 'ellipse':
-        ellipse_ratio = 4
+        ellipse_ratio = 2
         generator = functools.partial(sg.ellipse_generator, length,
                                       length / ellipse_ratio)
     if type == 'line':
@@ -40,7 +41,106 @@ def get_scene_generator(type, length):
     return generator
 
 
+def normalized(x):
+    return x / np.linalg.norm(x)
+
+
+def camera_pose(position, lookat, up):
+    '''
+    Pose from position and look at direction
+
+    >>> position = [1.0, 2.0, 3.0]
+    >>> lookat = [0., 10.0, 2.0]
+    >>> up = [0.0, 0.0, 1.0]
+    >>> pose = camera_pose(position, lookat, up)
+    >>> np.allclose(pose.get_origin(), position)
+    True
+    >>> d = normalized(pose.transform(lookat))
+    >>> np.allclose(d, [0, 0, 1])
+    True
+    '''
+    ez = normalized(np.array(lookat) - np.array(position))
+    ex = normalized(np.cross(ez, up))
+    ey = normalized(np.cross(ez, ex))
+    pose = pygeometry.Pose()
+    pose.set_rotation_matrix([ex, ey, ez])
+    pose.set_origin(position)
+    return pose
+
 class SyntheticScene(object):
+    def get_reconstruction(self, rotation_noise=0.0,
+                           position_noise=0.0,
+                           camera_noise=0.0):
+        raise NotImplementedError()
+
+    def get_scene_exifs(self, gps_noise):
+        raise NotImplementedError()
+
+    def get_tracks_data(self, maximum_depth, noise):
+        raise NotImplementedError()
+
+
+class SyntheticCubeScene(SyntheticScene):
+    """ Scene consisting in of cameras looking at point in a cube. """
+    def __init__(self, num_cameras, num_points, noise):
+        self.reconstruction = types.Reconstruction()
+        self.cameras = {}
+        for i in range(num_cameras):
+            camera = camera = pygeometry.Camera.create_perspective(0.9, -0.1, 0.01)
+            camera.id = 'camera%04d' % i
+            camera.height = 600
+            camera.width = 800
+            self.cameras[camera.id] = camera
+
+        self.reconstruction.cameras = self.cameras
+
+        r = 2.0
+        for i in range(num_cameras):
+            phi = np.random.rand()*math.pi
+            theta = np.random.rand()*2.0*math.pi
+            x = r*np.sin(theta)*np.cos(phi)
+            y = r*np.sin(theta)*np.sin(phi)
+            z = r*np.cos(theta)
+            position = [x, y, z]
+
+            alpha = np.random.rand()
+            lookat = [0.0, 0, 0]
+            up = [alpha * 0.2, alpha * 0.2, 1.0]
+            shot_id = 'shot%04d' % i
+            camera_id = 'camera%04d' % i
+            pose = camera_pose(position, lookat, up)
+            self.reconstruction.create_shot(shot_id, camera_id, pose)
+
+        points = np.random.rand(num_points, 3)-[0.5, 0.5, 0.5]
+        for i, p in enumerate(points):
+            point_id = 'point' + str(i)
+            pt = self.reconstruction.create_point(point_id, p)
+            pt.color = [100, 100, 20]
+
+    def get_reconstruction(self, rotation_noise=0.0,
+                           position_noise=0.0,
+                           camera_noise=0.0):
+        reconstruction = types.Reconstruction()
+        # Copy our original reconstruction
+        # since we do not want to modify the reference
+        reconstruction.cameras = self.cameras
+        for shot in self.reconstruction.shots.values():
+            reconstruction.create_shot(shot.id, shot.camera.id, shot.pose)
+        for point in self.reconstruction.points.values():
+            pt = reconstruction.create_point(point.id, point.coordinates)
+            pt.color = point.color
+        return reconstruction
+
+    def get_tracks_data(self, maximum_depth, noise):
+        return sg.generate_track_data(self.get_reconstruction(),
+                                      maximum_depth, noise)
+
+
+class SyntheticStreetScene(SyntheticScene):
+    """ Scene consisting in a virtual street extruded along some
+        parametric shape (line, ellipse), with camera placed along
+        the shape.
+    """
     def __init__(self, generator):
         self.generator = generator
         self.wall_points = None
@@ -69,7 +169,7 @@ class SyntheticScene(object):
     def add_camera_sequence(self, camera, start, length, height, interval,
                             position_noise=None, rotation_noise=None,
                             gps_noise=None):
-        default_noise_interval = 0.25*interval
+        default_noise_interval = 0.25 * interval
         positions, rotations = sg.generate_cameras(
             sg.samples_generator_interval(start, length, interval,
                                           default_noise_interval),
@@ -115,20 +215,30 @@ class SyntheticScene(object):
 
 
 def compare(reference, reconstruction):
-    position = sm.position_errors(reference, reconstruction)
-    gps = sm.gps_errors(reconstruction)
-    rotation = sm.rotation_errors(reference, reconstruction)
-    points = sm.points_errors(reference, reconstruction)
     completeness = sm.completeness_errors(reference, reconstruction)
+
+    absolute_position = sm.position_errors(reference, reconstruction)
+    absolute_rotation = sm.rotation_errors(reference, reconstruction)
+    absolute_points = sm.points_errors(reference, reconstruction)
+    absolute_gps = sm.gps_errors(reconstruction)
+
+    aligned = sm.aligned_to_reference(reference, reconstruction)
+    aligned_position = sm.position_errors(reference, aligned)
+    aligned_rotation = sm.rotation_errors(reference, aligned)
+    aligned_points = sm.points_errors(reference, aligned)
+    aligned_gps = sm.gps_errors(aligned)
+
     return {
-        'position_average': np.linalg.norm(np.average(position, axis=0)),
-        'position_std': np.linalg.norm(np.std(position, axis=0)),
-        'gps_average': np.linalg.norm(np.average(gps, axis=0)),
-        'gps_std': np.linalg.norm(np.std(gps, axis=0)),
-        'rotation_average': np.average(rotation),
-        'rotation_std': np.std(rotation),
-        'points_average': np.linalg.norm(np.average(points, axis=0)),
-        'points_std': np.linalg.norm(np.std(points, axis=0)),
         'ratio_cameras': completeness[0],
-        'ratio_points': completeness[1]
+        'ratio_points': completeness[1],
+
+        'absolute_position_rmse': sm.rmse(absolute_position),
+        'absolute_rotation_rmse': sm.rmse(absolute_rotation),
+        'absolute_points_rmse': sm.rmse(absolute_points),
+        'absolute_gps_rmse': sm.rmse(absolute_gps),
+
+        'aligned_position_rmse': sm.rmse(aligned_position),
+        'aligned_rotation_rmse': sm.rmse(aligned_rotation),
+        'aligned_points_rmse': sm.rmse(aligned_points),
+        'aligned_gps_rmse': sm.rmse(aligned_gps),
     }

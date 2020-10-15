@@ -5,13 +5,13 @@ import resource
 import sys
 
 import cv2
-from joblib import Parallel, parallel_backend, delayed
+from joblib import Parallel, parallel_backend, delayed, externals
 
 
 logger = logging.getLogger(__name__)
 
 
-abspath = os.path.abspath(os.path.dirname(__file__))
+abspath = os.path.dirname(os.path.realpath(__file__))
 SENSOR = os.path.join(abspath, 'data', 'sensor_data.json')
 BOW_PATH = os.path.join(abspath, 'data', 'bow')
 
@@ -27,18 +27,44 @@ else:
     logger.warning('Unable to find flann Index')
     flann_Index = None
 
+# Either use default (loky )or multiprocessing if loky doesn't work
+backend_parallel = None
+def get_parallel_backend():
+    default_parallel_backend = 'loky'
+    global backend_parallel
+    if not backend_parallel:
+        try:
+            logger.info('********* Loky back-end testing, please ignore errors below. *********')
+            backend_parallel = default_parallel_backend
+            sys.stdout = sys.stderr = open(os.devnull, 'w')
+            Parallel(backend=default_parallel_backend, n_jobs=2)(delayed(str)(i**2) for i in range(10))
+        except (externals.loky.process_executor.TerminatedWorkerError, ModuleNotFoundError):
+            backend_parallel  = 'multiprocessing'
+        sys.stdout = sys.__stdout__
+        sys.stderr = sys.__stderr__
+        logger.info('************* Loky back-end test done ************************************')
+        logger.info("Using {} as parallel backend.".format(backend_parallel))
+    return backend_parallel
+
 
 # Parallel processes
 def parallel_map(func, args, num_proc, max_batch_size=1):
     """Run function for all arguments using multiple processes."""
+    # De-activate/Restore any inner OpenCV threading
+    threads_used = cv2.getNumThreads()
+    cv2.setNumThreads(0)
+
     num_proc = min(num_proc, len(args))
     if num_proc <= 1:
-        return list(map(func, args))
+        res = list(map(func, args))
     else:
-        with parallel_backend('loky', n_jobs=num_proc):
-            batch_size = max(1, int(len(args)/(num_proc*2)))
+        with parallel_backend(get_parallel_backend(), n_jobs=num_proc):
+            batch_size = max(1, int(len(args) / (num_proc * 2)))
             batch_size = min(batch_size, max_batch_size) if max_batch_size else batch_size
-            return Parallel(batch_size=batch_size)(delayed(func)(arg) for arg in args)
+            res = Parallel(batch_size=batch_size)(delayed(func)(arg) for arg in args)
+
+    cv2.setNumThreads(threads_used)
+    return res
 
 
 # Memory usage

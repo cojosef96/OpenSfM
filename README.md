@@ -22,6 +22,20 @@ Checkout this [blog post with more demos](http://blog.mapillary.com/update/2014/
 [Running a reconstruction]: https://docs.opensfm.org/using.html (OpenSfM usage)
 [Documentation]: https://docs.opensfm.org  (OpenSfM documentation)
 
+## Update 0.5.1
+* Added Sift_GPU support
+* Added Docker support with Nvidia GPU support
+* Updated the sift_gpu ver to 0.5.1
+
+#### Docker Usage
+```
+docker build -t opensfm . && \
+docker run --name opensfm_docker --rm --gpus all opensfm 
+```
+
+
+
+
 ## Update Sift_GPU version
 
 ### Changes:
@@ -118,3 +132,6 @@ Feature Matching took 0.025 sec
 
 For more information, you can contact me via [Email](mailto:cojosef@gmail.com)
 
+
+## License
+OpenSfM is BSD-style licensed, as found in the LICENSE file.

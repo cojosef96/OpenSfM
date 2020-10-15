@@ -5,7 +5,7 @@ import math
 
 import numpy as np
 
-from opensfm import csfm
+from opensfm import pygeometry
 from opensfm import multiview
 from opensfm import transformations as tf
 
@@ -81,7 +81,7 @@ def alignment_constraints(config, reconstruction, gcp):
     if config['bundle_use_gps']:
         for shot in reconstruction.shots.values():
             X.append(shot.pose.get_origin())
-            Xp.append(shot.metadata.gps_position)
+            Xp.append(shot.metadata.gps_position.value)
 
     return X, Xp
 
@@ -111,7 +111,7 @@ def detect_alignment_constraints(config, reconstruction, gcp):
                        config['align_orientation_prior'])
         return 'orientation_prior'
     else:
-        logger.info('Shots and/or GCPs are well-conditionned. Using naive 3D-3D alignment.')
+        logger.info('Shots and/or GCPs are well-conditioned. Using naive 3D-3D alignment.')
         return 'naive'
 
 
@@ -122,7 +122,7 @@ def align_reconstruction_naive_similarity(config, reconstruction, gcp):
     if len(X) == 0:
         return 1.0, np.identity(3), np.zeros((3))
 
-    # Translation-only case, either : 
+    # Translation-only case, either :
     #  - a single value
     #  - identical values
     same_values = (np.linalg.norm(np.std(Xp, axis=0)) < 1e-10)
@@ -179,6 +179,7 @@ def align_reconstruction_orientation_prior_similarity(reconstruction, config, gc
     X = Rplane.dot(X.T).T
 
     # Estimate 2d similarity to align to GPS
+    two_shots = len(X) == 2
     single_shot = len(X) < 2
     same_shots = (X.std(axis=0).max() < 1e-8 or     # All points are the same.
                   Xp.std(axis=0).max() < 0.01)      # All GPS points are the same.
@@ -186,6 +187,14 @@ def align_reconstruction_orientation_prior_similarity(reconstruction, config, gc
         s = 1.0
         A = Rplane
         b = Xp.mean(axis=0) - X.mean(axis=0)
+
+        # Clamp shots pair scale to 1km, so the
+        # optimizer can still catch-up acceptable error
+        max_scale = 1000
+        current_scale = np.linalg.norm(b)
+        if two_shots and current_scale > max_scale:
+            b = max_scale*b/current_scale
+            s = max_scale/current_scale
     else:
         T = tf.affine_matrix_from_points(X.T[:2], Xp.T[:2], shear=False)
         s = np.linalg.det(T[:2, :2])**0.5
@@ -202,7 +211,7 @@ def align_reconstruction_orientation_prior_similarity(reconstruction, config, gc
 
 def estimate_ground_plane(reconstruction, config):
     """Estimate ground plane orientation.
-    
+
     It assumes cameras are all at a similar height and uses the
     align_orientation_prior option to enforce cameras to look
     horizontally or vertically.
@@ -212,7 +221,7 @@ def estimate_ground_plane(reconstruction, config):
     for shot in reconstruction.shots.values():
         R = shot.pose.get_rotation_matrix()
         x, y, z = get_horizontal_and_vertical_directions(
-            R, shot.metadata.orientation)
+            R, shot.metadata.orientation.value)
         if orientation_type == 'no_roll':
             onplane.append(x)
             verticals.append(-y)
@@ -230,10 +239,10 @@ def estimate_ground_plane(reconstruction, config):
         ground_points.append(shot.pose.get_origin())
     ground_points = np.array(ground_points)
     ground_points -= ground_points.mean(axis=0)
-    
+
     plane = multiview.fit_plane(ground_points, onplane, verticals)
     return plane
-    
+
 
 def get_horizontal_and_vertical_directions(R, orientation):
     """Get orientation vectors from camera rotation matrix and orientation tag.
@@ -279,16 +288,16 @@ def triangulate_single_gcp(reconstruction, observations):
     if len(os) >= 2:
         thresholds = len(os) * [reproj_threshold]
         angle = np.radians(min_ray_angle_degrees)
-        e, X = csfm.triangulate_bearings_midpoint(os, bs, thresholds, angle)
-        return X
+        return pygeometry.triangulate_bearings_midpoint(os, bs, thresholds, angle)
+    return False, None
 
 
 def triangulate_all_gcp(reconstruction, gcp):
     """Group and triangulate Ground Control Points seen in 2+ images."""
     triangulated, measured = [], []
     for point in gcp:
-        x = triangulate_single_gcp(reconstruction, point.observations)
-        if x is not None:
+        e, x = triangulate_single_gcp(reconstruction, point.observations)
+        if e:
             triangulated.append(x)
-            measured.append(point.coordinates)
+            measured.append(point.coordinates.value)
     return triangulated, measured
