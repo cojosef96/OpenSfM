@@ -11,4 +11,6 @@ pyyaml==5.1
 scipy
 six
 xmltodict==0.10.2
-silx
+silx>=0.13.2
+pyopencl>=2020.2.2
+matplotlib>=3.3.2
