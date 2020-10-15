@@ -8,6 +8,7 @@
 !data/berlin/images
 !data/berlin/reconstruction_example.json
 !data/lund/images
+!data/berlin_gpu
 !doc
 !LICENSE
 !opensfm
@@ -16,6 +17,7 @@
 !setup.cfg
 !setup.py
 !viewer
+!test_sift_gpu.py
 
 # Picking exceptions
 doc/build

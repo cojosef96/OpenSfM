@@ -1,5 +1,4 @@
-FROM ubuntu:20.04
-
+FROM nvidia/cuda:11.0-base
 ARG DEBIAN_FRONTEND=noninteractive
 
 # Install apt-getable dependencies
@@ -19,6 +18,7 @@ RUN apt-get update \
         python3-scipy \
         python3-yaml \
         curl \
+        nvidia-opencl-icd-340 \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
