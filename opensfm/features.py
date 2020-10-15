@@ -8,7 +8,7 @@ import cv2
 
 from opensfm import context
 from opensfm import pyfeatures
-from sift_gpu import SiftGpu
+from opensfm.sift_gpu import SiftGpu
 
 logger = logging.getLogger(__name__)
 
@@ -337,7 +337,9 @@ def extract_features(image, config):
     colors = image[ys, xs]
     if image.shape[2] == 1:
         colors = np.repeat(colors, 3).reshape((-1,3))
-
+    if feature_type=="SIFT_GPU":
+        return normalize_features(points, desc, colors,
+                                  image.shape[1], image.shape[0]), keypoints
     return normalize_features(points, desc, colors,
                               image.shape[1], image.shape[0])
 
