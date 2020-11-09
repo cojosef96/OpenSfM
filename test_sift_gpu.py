@@ -57,9 +57,16 @@ def draw_matches(img1, kp1, img2, kp2, matches, color=None):
     plt.show()
 
 
+def plot_features(img2, cv_kp2):
+    img3 = np.array([])
+    img3 = cv2.drawKeypoints(img2, cv_kp2, img3, color=(0, 0, 255))
+    plt.imshow(img3), plt.show()
+
+
+
 if __name__ == '__main__':
-    img1_path = 'data/berlin/images/01.jpg'
-    img2_path = 'data/berlin/images/02.jpg'
+    img1_path = '/home/yossi/Pictures/zikim_3.png'
+    img2_path = '/home/yossi/Pictures/zikim_4.png'
     # read images
     img1 = cv2.imread(img1_path)  # load img1
     img2 = cv2.imread(img2_path)  # load img1
@@ -73,15 +80,18 @@ if __name__ == '__main__':
     print("Feature Extraction took {} sec".format(time.time() - s_time))
     idx = np.where(np.sum(keypoints_1.desc, 1) != 0)  # remove zero descriptors from keypoints
     keypoints_1 = keypoints_1[idx]
+    print("size of keypoints_1 = %d" % len(keypoints_1))
 
     keypoints_2 = sift.detect_image(img2)  # detect features
     idx = np.where(np.sum(keypoints_2.desc, 1) != 0)  # remove zero descriptors from keypoints
     keypoints_2 = keypoints_2[idx]
+    print("size of keypoints_2 = %d" % len(keypoints_2))
 
     # feature matching
     s_time = time.time()
     matches = sift.match_images(keypoints_1, keypoints_2)  # matching between 2 keypoints
     print("Feature Matching took took {} sec".format(time.time() - s_time))
+    print(len(matches))
 
     # transform into cv2 keypoints
     cv_kp1 = [cv2.KeyPoint(x=keypoints_1.x[i], y=keypoints_1.y[i], _size=20) for i in range(len(keypoints_1.x))]
@@ -95,3 +105,5 @@ if __name__ == '__main__':
     # img3 = np.array([])
     # img3 = cv2.drawKeypoints(img2, cv_kp2, img3, color=(0, 0, 255))
     # plt.imshow(img3), plt.show()
+    plot_features(img2, cv_kp2)
+    plot_features(img1, cv_kp1)
