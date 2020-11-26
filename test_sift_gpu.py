@@ -3,6 +3,9 @@ import matplotlib.pyplot as plt
 from opensfm.sift_gpu import SiftGpu
 import numpy as np
 import time
+import pyopencl as cl
+# print the devices
+print(cl.get_platforms())
 
 
 def draw_matches(img1, kp1, img2, kp2, matches, color=None):
