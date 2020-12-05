@@ -43,7 +43,7 @@ def draw_matches(img1, kp1, img2, kp2, matches, color=None):
         # Generate random color for RGB/BGR and grayscale images as needed.
         if not color:
             c = np.random.randint(0, 256, 3) if len(img1.shape) == 3 else np.random.randint(0, 256)
-            c = ( int (c [ 0 ]), int (c [ 1 ]), int (c [ 2 ]))
+            c = (int(c[0]), int(c[1]), int(c[2]))
             c = tuple(c)
         # So the keypoint locs are stored as a tuple of floats.  cv2.line(), like most other things,
         # wants locs as a tuple of ints.
@@ -56,6 +56,13 @@ def draw_matches(img1, kp1, img2, kp2, matches, color=None):
     plt.figure(figsize=(15, 15))
     plt.imshow(new_img)
     plt.show()
+
+
+def plot_features(img2, cv_kp2):
+    img3 = np.array([])
+    img3 = cv2.drawKeypoints(img2, cv_kp2, img3, color=(0, 0, 255))
+    plt.imshow(img3)
+    plt.savefig("image_sift_gpu.png")
 
 
 if __name__ == '__main__':
